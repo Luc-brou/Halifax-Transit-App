@@ -27,6 +27,11 @@ class MainActivity : ComponentActivity() {
             val backStackEntry by navController.currentBackStackEntryAsState()
             val currentRoute = backStackEntry?.destination?.route
 
+            // ✅ FIX: DB INIT BACK (this was your blank screen bug)
+            LaunchedEffect(Unit) {
+                viewModel.initDb(this@MainActivity)
+            }
+
             Scaffold(
                 bottomBar = {
                     NavigationBar {
@@ -35,7 +40,6 @@ class MainActivity : ComponentActivity() {
                             selected = currentRoute == "map",
                             onClick = {
                                 navController.navigate("map") {
-                                    popUpTo("map") { inclusive = false }
                                     launchSingleTop = true
                                 }
                             },
@@ -47,7 +51,6 @@ class MainActivity : ComponentActivity() {
                             selected = currentRoute == "routes",
                             onClick = {
                                 navController.navigate("routes") {
-                                    popUpTo("map")
                                     launchSingleTop = true
                                 }
                             },
