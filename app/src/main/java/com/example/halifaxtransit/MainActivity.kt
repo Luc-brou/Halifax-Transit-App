@@ -1,24 +1,14 @@
 package com.example.halifaxtransit
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Place
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.navigation.compose.*
 import com.example.halifaxtransit.screens.BusMapScreen
@@ -31,18 +21,18 @@ class MainActivity : ComponentActivity() {
     private val permissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (!granted) {
-                Toast.makeText(this, "Location permission required", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "Location required", Toast.LENGTH_LONG).show()
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
 
         viewModel.startGtfsUpdates()
 
         setContent {
-            val context = LocalContext.current
+
+            val context = this
 
             LaunchedEffect(Unit) {
                 if (ContextCompat.checkSelfPermission(
@@ -54,40 +44,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            val navController = rememberNavController()
-            val backStack by navController.currentBackStackEntryAsState()
-            val route = backStack?.destination?.route
+            val nav = rememberNavController()
 
-            Scaffold(
-                bottomBar = {
-                    NavigationBar {
-                        NavigationBarItem(
-                            selected = route == "map",
-                            onClick = { navController.navigate("map") },
-                            icon = { Icon(Icons.Default.Place, null) },
-                            label = { Text("Map") }
-                        )
-                        NavigationBarItem(
-                            selected = route == "routes",
-                            onClick = { navController.navigate("routes") },
-                            icon = { Icon(Icons.Default.Info, null) },
-                            label = { Text("Routes") }
-                        )
-                    }
+            NavHost(navController = nav, startDestination = "map") {
+
+                composable("map") {
+                    BusMapScreen(viewModel)
                 }
-            ) { padding ->
 
-                NavHost(
-                    navController,
-                    startDestination = "map",
-                    modifier = Modifier.padding(padding)
-                ) {
-                    composable("map") {
-                        BusMapScreen(viewModel)
-                    }
-                    composable("routes") {
-                        RoutesScreen(viewModel)
-                    }
+                composable("routes") {
+                    RoutesScreen(viewModel)
                 }
             }
         }

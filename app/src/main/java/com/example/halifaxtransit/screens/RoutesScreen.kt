@@ -7,28 +7,27 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.halifaxtransit.MainViewModel
 
 @Composable
 fun RoutesScreen(viewModel: MainViewModel) {
 
-    val context = LocalContext.current
-
-    LaunchedEffect(Unit) {
-        viewModel.initDb(context)
-    }
-
     val routes by viewModel.routes.collectAsState()
 
     LazyColumn(
-        Modifier.fillMaxSize().padding(16.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
     ) {
-        items(routes) { route ->
+
+        items(
+            items = routes,
+            key = { it.routeId }
+        ) { route ->
 
             Row(
-                Modifier
+                modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
                     .border(1.dp, Color.Gray)
