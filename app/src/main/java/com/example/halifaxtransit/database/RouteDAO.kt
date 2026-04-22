@@ -7,12 +7,13 @@ import com.example.halifaxtransit.models.Route
 
 @Dao
 interface RoutesDao {
-    @Query("SELECT * FROM Routes") //this query selects all routes
-    fun getAll(): List<Route> //then we can use this function to grab all the routes for routes screen
+
+    @Query("SELECT * FROM Routes")
+    fun getAll(): kotlinx.coroutines.flow.Flow<List<Route>>
 
     @Update
-    fun updateRoute(route: Route) //function updates all routes
+    suspend fun updateRoute(route: Route)
 
-    @Query("UPDATE Routes SET Highlights = :highlight WHERE route_id = :id") //this is for our highlighted (checked) routes
-    fun setHighlight(id: String, highlight: Boolean) //we use this in map screen when user checks a route they want to see
+    @Query("UPDATE Routes SET Highlights = :highlight WHERE route_id = :id")
+    suspend fun setHighlight(id: String, highlight: Boolean)
 }
