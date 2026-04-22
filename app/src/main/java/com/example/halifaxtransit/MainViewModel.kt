@@ -19,15 +19,30 @@ import java.net.URL
 
 class MainViewModel : ViewModel() {
 
+    private val _gtfs = MutableStateFlow<GtfsRealtime.FeedMessage?>(null)
+    val gtfs = _gtfs.asStateFlow()
+
     private val _routes = MutableStateFlow<List<Route>>(emptyList())
     val routes = _routes.asStateFlow()
 
     private val _buses = MutableStateFlow<Map<String, AnimatedBus>>(emptyMap())
     val buses = _buses.asStateFlow()
 
+    // 🔥 GLOBAL ANIMATION CLOCK (THIS FIXES JITTER)
+    private val _frameTime = MutableStateFlow(System.currentTimeMillis())
+    val frameTime = _frameTime.asStateFlow()
+
     private lateinit var dao: RoutesDao
 
-    // ✅ RESTORED: called from Activity
+    init {
+        viewModelScope.launch {
+            while (true) {
+                _frameTime.value = System.currentTimeMillis()
+                delay(16L) // ~60fps render clock
+            }
+        }
+    }
+
     fun initDb(context: Context) {
         dao = AppDatabase.getDatabase(context).routesDao()
 
@@ -38,20 +53,20 @@ class MainViewModel : ViewModel() {
         }
     }
 
-    // ✅ GTFS LIVE UPDATES
     fun startGtfsUpdates() {
         viewModelScope.launch {
-
             while (true) {
                 try {
+                    val url = URL(
+                        "https://gtfs.halifax.ca/realtime/Vehicle/VehiclePositions.pb"
+                    )
+
                     val feed = withContext(Dispatchers.IO) {
-                        val url = URL(
-                            "https://gtfs.halifax.ca/realtime/Vehicle/VehiclePositions.pb"
-                        )
                         GtfsRealtime.FeedMessage.parseFrom(url.openStream())
                     }
 
-                    val now = System.currentTimeMillis()
+                    _gtfs.value = feed
+
                     val updated = _buses.value.toMutableMap()
 
                     feed.entityList.forEach { entity ->
@@ -61,23 +76,20 @@ class MainViewModel : ViewModel() {
                         val id = entity.id
                         val routeId = v.trip?.routeId ?: "?"
 
-                        val newLat = pos.latitude.toDouble()
-                        val newLon = pos.longitude.toDouble()
-
                         val old = updated[id]
 
                         updated[id] = AnimatedBus(
                             id = id,
                             routeId = routeId,
 
-                            prevLat = old?.currLat ?: newLat,
-                            prevLon = old?.currLon ?: newLon,
+                            // 🔥 IMPORTANT: NEVER reset from wrong origin
+                            fromLat = old?.toLat ?: pos.latitude.toDouble(),
+                            fromLon = old?.toLon ?: pos.longitude.toDouble(),
 
-                            currLat = newLat,
-                            currLon = newLon,
+                            toLat = pos.latitude.toDouble(),
+                            toLon = pos.longitude.toDouble(),
 
-                            prevTime = old?.currTime ?: now,
-                            currTime = now
+                            lastUpdateTime = System.currentTimeMillis()
                         )
                     }
 
@@ -87,14 +99,12 @@ class MainViewModel : ViewModel() {
                     Log.e("GTFS", e.toString())
                 }
 
-                delay(5000)
+                delay(5000L)
             }
         }
     }
 
     fun toggleHighlight(routeId: String, highlight: Boolean) {
-        if (!::dao.isInitialized) return
-
         viewModelScope.launch(Dispatchers.IO) {
             dao.setHighlight(routeId, highlight)
         }

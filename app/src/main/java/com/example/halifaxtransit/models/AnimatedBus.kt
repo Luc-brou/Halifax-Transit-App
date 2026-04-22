@@ -4,12 +4,10 @@ data class AnimatedBus(
     val id: String,
     val routeId: String,
 
-    val prevLat: Double,
-    val prevLon: Double,
+    val fromLat: Double,
+    val fromLon: Double,
+    val toLat: Double,
+    val toLon: Double,
 
-    val currLat: Double,
-    val currLon: Double,
-
-    val prevTime: Long,
-    val currTime: Long
+    val lastUpdateTime: Long
 )
