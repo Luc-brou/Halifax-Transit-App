@@ -76,4 +76,9 @@ dependencies {
     // Room storage
     implementation("androidx.room:room-runtime:2.8.4")
     ksp("androidx.room:room-compiler:2.8.4")
+
+    //HTTP reject fix
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.protobuf:protobuf-java:3.25.1")
+
 }

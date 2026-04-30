@@ -15,7 +15,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.URL
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.*
 
 class MainViewModel : ViewModel() {
 
@@ -28,17 +32,35 @@ class MainViewModel : ViewModel() {
     private val _buses = MutableStateFlow<Map<String, AnimatedBus>>(emptyMap())
     val buses = _buses.asStateFlow()
 
-    // 🔥 GLOBAL ANIMATION CLOCK (THIS FIXES JITTER)
     private val _frameTime = MutableStateFlow(System.currentTimeMillis())
     val frameTime = _frameTime.asStateFlow()
 
     private lateinit var dao: RoutesDao
 
+    // UNSAFE CLIENT FOR EMULATOR
+    private val unsafeClient: OkHttpClient by lazy {
+        val trustAllCerts = arrayOf<TrustManager>(
+            object : X509TrustManager {
+                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+            }
+        )
+
+        val sslContext = SSLContext.getInstance("SSL")
+        sslContext.init(null, trustAllCerts, SecureRandom())
+
+        OkHttpClient.Builder()
+            .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
+            .hostnameVerifier { _, _ -> true }
+            .build()
+    }
+
     init {
         viewModelScope.launch {
             while (true) {
                 _frameTime.value = System.currentTimeMillis()
-                delay(16L) // ~60fps render clock
+                delay(16L)
             }
         }
     }
@@ -57,12 +79,15 @@ class MainViewModel : ViewModel() {
         viewModelScope.launch {
             while (true) {
                 try {
-                    val url = URL(
-                        "https://gtfs.halifax.ca/realtime/Vehicle/VehiclePositions.pb"
-                    )
+                    val request = Request.Builder()
+                        .url("https://gtfs.halifax.ca/realtime/Vehicle/VehiclePositions.pb")
+                        .build()
 
                     val feed = withContext(Dispatchers.IO) {
-                        GtfsRealtime.FeedMessage.parseFrom(url.openStream())
+                        unsafeClient.newCall(request).execute().use { response ->
+                            if (!response.isSuccessful) throw Exception("HTTP ${response.code}")
+                            GtfsRealtime.FeedMessage.parseFrom(response.body!!.byteStream())
+                        }
                     }
 
                     _gtfs.value = feed
@@ -81,14 +106,10 @@ class MainViewModel : ViewModel() {
                         updated[id] = AnimatedBus(
                             id = id,
                             routeId = routeId,
-
-                            // 🔥 IMPORTANT: NEVER reset from wrong origin
                             fromLat = old?.toLat ?: pos.latitude.toDouble(),
                             fromLon = old?.toLon ?: pos.longitude.toDouble(),
-
                             toLat = pos.latitude.toDouble(),
                             toLon = pos.longitude.toDouble(),
-
                             lastUpdateTime = System.currentTimeMillis()
                         )
                     }
@@ -96,7 +117,7 @@ class MainViewModel : ViewModel() {
                     _buses.value = updated
 
                 } catch (e: Exception) {
-                    Log.e("GTFS", e.toString())
+                    Log.e("GTFS", "GTFS error: $e")
                 }
 
                 delay(5000L)
