@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.security.SecureRandom
@@ -37,7 +38,18 @@ class MainViewModel : ViewModel() {
 
     private lateinit var dao: RoutesDao
 
-    // UNSAFE CLIENT FOR EMULATOR
+    // -----------------------------
+    //  Nominatim Search Result
+    // -----------------------------
+    data class SearchResult(
+        val name: String,
+        val lat: Double,
+        val lon: Double
+    )
+
+    // -----------------------------
+    //  UNSAFE CLIENT FOR EMULATOR
+    // -----------------------------
     private val unsafeClient: OkHttpClient by lazy {
         val trustAllCerts = arrayOf<TrustManager>(
             object : X509TrustManager {
@@ -54,6 +66,48 @@ class MainViewModel : ViewModel() {
             .sslSocketFactory(sslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
             .build()
+    }
+
+    // -----------------------------
+    //  NOMINATIM SEARCH FUNCTION
+    // -----------------------------
+    fun searchPlaces(query: String, onResult: (List<SearchResult>) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = "https://nominatim.openstreetmap.org/search" +
+                        "?q=${query.replace(" ", "+")}" +
+                        "&format=json&limit=5"
+
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", "HalifaxTransitApp/1.0")
+                    .build()
+
+                unsafeClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        onResult(emptyList())
+                        return@use
+                    }
+
+                    val body = response.body?.string() ?: "[]"
+                    val json = Json.parseToJsonElement(body).jsonArray
+
+                    val results = json.mapNotNull { item ->
+                        val obj = item.jsonObject
+                        val name = obj["display_name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                        val lat = obj["lat"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+                        val lon = obj["lon"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+                        SearchResult(name, lat, lon)
+                    }
+
+                    onResult(results)
+                }
+
+            } catch (e: Exception) {
+                Log.e("SEARCH", "Search error: $e")
+                onResult(emptyList())
+            }
+        }
     }
 
     init {

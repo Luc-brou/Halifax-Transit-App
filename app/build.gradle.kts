@@ -80,5 +80,9 @@ dependencies {
     //HTTP reject fix
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.protobuf:protobuf-java:3.25.1")
+    //
+
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
 
 }

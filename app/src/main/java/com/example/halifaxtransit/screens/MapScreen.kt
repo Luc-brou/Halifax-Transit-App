@@ -1,7 +1,9 @@
 package com.example.halifaxtransit.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.*
@@ -25,6 +27,10 @@ fun BusMapScreen(viewModel: MainViewModel) {
     val routes by viewModel.routes.collectAsState()
     val frameTime by viewModel.frameTime.collectAsState()
 
+    // Search state
+    var query by remember { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<MainViewModel.SearchResult>>(emptyList()) }
+
     val mapState = rememberMapViewportState {
         setCameraOptions {
             zoom(11.5)
@@ -32,47 +38,91 @@ fun BusMapScreen(viewModel: MainViewModel) {
         }
     }
 
-    MapboxMap(mapViewportState = mapState) {
+    Column {
 
-        buses.values.forEach { bus ->
-
-            val duration = (frameTime - bus.lastUpdateTime).coerceAtLeast(1L)
-
-            val t = (duration / 2000f).coerceIn(0f, 1f)
-
-            val lat = bus.fromLat + (bus.toLat - bus.fromLat) * t
-            val lon = bus.fromLon + (bus.toLon - bus.fromLon) * t
-
-            val route = routes.find {
-                bus.routeId.startsWith(it.routeId)
-            }
-
-            val icon = if (route?.highlights == true)
-                R.drawable.busblue
-            else
-                R.drawable.bus
-
-            ViewAnnotation(
-                options = viewAnnotationOptions {
-                    geometry(Point.fromLngLat(lon, lat))
+        // -----------------------------
+        // SEARCH BAR
+        // -----------------------------
+        OutlinedTextField(
+            value = query,
+            onValueChange = {
+                query = it
+                if (query.length >= 3) {
+                    viewModel.searchPlaces(query) { list ->
+                        results = list
+                    }
+                } else {
+                    results = emptyList()
                 }
-            ) {
-                Column(
-                    modifier = Modifier.width(40.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+            },
+            label = { Text("Search places") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
+
+        // -----------------------------
+        // SEARCH RESULTS LIST
+        // -----------------------------
+        results.forEach { result ->
+            Text(
+                text = result.name,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .clickable {
+                        // Move map to selected location
+                        mapState.setCameraOptions {
+                            center(Point.fromLngLat(result.lon, result.lat))
+                            zoom(14.0)
+                        }
+                        results = emptyList() // hide results
+                    }
+            )
+        }
+
+        // -----------------------------
+        // MAP + BUS MARKERS
+        // -----------------------------
+        MapboxMap(mapViewportState = mapState) {
+
+            buses.values.forEach { bus ->
+
+                val duration = (frameTime - bus.lastUpdateTime).coerceAtLeast(1L)
+                val t = (duration / 2000f).coerceIn(0f, 1f)
+
+                val lat = bus.fromLat + (bus.toLat - bus.fromLat) * t
+                val lon = bus.fromLon + (bus.toLon - bus.fromLon) * t
+
+                val route = routes.find { bus.routeId.startsWith(it.routeId) }
+
+                val icon = if (route?.highlights == true)
+                    R.drawable.busblue
+                else
+                    R.drawable.bus
+
+                ViewAnnotation(
+                    options = viewAnnotationOptions {
+                        geometry(Point.fromLngLat(lon, lat))
+                    }
                 ) {
+                    Column(
+                        modifier = Modifier.width(40.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
 
-                    Image(
-                        painter = painterResource(icon),
-                        contentDescription = null,
-                        modifier = Modifier.size(26.dp)
-                    )
+                        Image(
+                            painter = painterResource(icon),
+                            contentDescription = null,
+                            modifier = Modifier.size(26.dp)
+                        )
 
-                    Text(
-                        bus.routeId,
-                        fontSize = 10.sp,
-                        color = Color.Black
-                    )
+                        Text(
+                            bus.routeId,
+                            fontSize = 10.sp,
+                            color = Color.Black
+                        )
+                    }
                 }
             }
         }
