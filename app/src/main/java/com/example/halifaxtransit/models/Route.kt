@@ -4,18 +4,22 @@ import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "Routes") //this is the routes table we seed
+@Entity(tableName = "Routes")
 data class Route(
-    @PrimaryKey //primary key is route id
+    @PrimaryKey
     @ColumnInfo(name = "route_id")
     val routeId: String,
 
-    @ColumnInfo(name = "route_short_name") //short name, usually same as id
+    @ColumnInfo(name = "route_short_name")
     val routeShortName: String,
 
-    @ColumnInfo(name = "route_long_name") //this is the long name ex "Sackville"
+    @ColumnInfo(name = "route_long_name")
     val routeLongName: String,
 
-    @ColumnInfo(name = "Highlights") //this is boolean for if the user wants the route
-    val highlights: Boolean          //highlighted or not. 1=yes 0=no
+    // existing highlight field (map highlighting)
+    @ColumnInfo(name = "Highlights")
+    val highlights: Boolean,
+
+    @ColumnInfo(name = "favourite")
+    val favourite: Boolean = false
 )

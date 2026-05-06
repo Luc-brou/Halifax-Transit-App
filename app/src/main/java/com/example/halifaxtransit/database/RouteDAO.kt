@@ -16,4 +16,7 @@ interface RoutesDao {
 
     @Query("UPDATE Routes SET Highlights = :highlight WHERE route_id = :id")
     suspend fun setHighlight(id: String, highlight: Boolean)
+
+    @Query("UPDATE Routes SET favourite = :fav WHERE route_id = :id")
+    suspend fun setFavourite(id: String, fav: Boolean)
 }

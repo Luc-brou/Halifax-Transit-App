@@ -9,12 +9,9 @@ import com.example.halifaxtransit.database.RoutesDao
 import com.example.halifaxtransit.models.AnimatedBus
 import com.example.halifaxtransit.models.Route
 import com.google.transit.realtime.GtfsRealtime
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -39,7 +36,7 @@ class MainViewModel : ViewModel() {
     private lateinit var dao: RoutesDao
 
     // -----------------------------
-    //  Nominatim Search Result
+    // Search Result + Loading State
     // -----------------------------
     data class SearchResult(
         val name: String,
@@ -47,8 +44,12 @@ class MainViewModel : ViewModel() {
         val lon: Double
     )
 
+    val isSearching = MutableStateFlow(false)
+
+    private var searchJob: Job? = null
+
     // -----------------------------
-    //  UNSAFE CLIENT FOR EMULATOR
+    // Unsafe client for emulator
     // -----------------------------
     private val unsafeClient: OkHttpClient by lazy {
         val trustAllCerts = arrayOf<TrustManager>(
@@ -69,47 +70,103 @@ class MainViewModel : ViewModel() {
     }
 
     // -----------------------------
-    //  NOMINATIM SEARCH FUNCTION
+    // Debounced Search
+    // -----------------------------
+    fun searchPlacesDebounced(query: String, callback: (List<SearchResult>) -> Unit) {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            delay(300) // debounce
+            searchPlaces(query, callback)
+        }
+    }
+
+    // -----------------------------
+    // Improved Nominatim Search
     // -----------------------------
     fun searchPlaces(query: String, onResult: (List<SearchResult>) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val url = "https://nominatim.openstreetmap.org/search" +
-                        "?q=${query.replace(" ", "+")}" +
-                        "&format=json&limit=5"
+                isSearching.value = true
+
+                // Halifax bounding box
+                val baseUrl =
+                    "https://nominatim.openstreetmap.org/search" +
+                            "?q=${query.replace(" ", "+")}" +
+                            "&format=json" +
+                            "&addressdetails=1" +
+                            "&countrycodes=ca" +
+                            "&viewbox=-63.9,44.9,-63.3,44.5" +
+                            "&bounded=1" +
+                            "&limit=10"
 
                 val request = Request.Builder()
-                    .url(url)
+                    .url(baseUrl)
                     .header("User-Agent", "HalifaxTransitApp/1.0")
                     .build()
 
-                unsafeClient.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        onResult(emptyList())
-                        return@use
-                    }
+                val response = unsafeClient.newCall(request).execute()
+                val body = response.body?.string() ?: "[]"
+                val json = Json.parseToJsonElement(body).jsonArray
 
-                    val body = response.body?.string() ?: "[]"
-                    val json = Json.parseToJsonElement(body).jsonArray
+                var results = json.mapNotNull { item ->
+                    val obj = item.jsonObject
+                    val name = obj["display_name"]?.jsonPrimitive?.content ?: return@mapNotNull null
+                    val lat = obj["lat"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+                    val lon = obj["lon"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
+                    SearchResult(name, lat, lon)
+                }
 
-                    val results = json.mapNotNull { item ->
+                // If no results, try fuzzy search
+                if (results.isEmpty()) {
+                    val fuzzyUrl =
+                        "https://nominatim.openstreetmap.org/search" +
+                                "?q=${query.replace(" ", "+")}*" +
+                                "&format=json&addressdetails=1&limit=10"
+
+                    val fuzzyReq = Request.Builder()
+                        .url(fuzzyUrl)
+                        .header("User-Agent", "HalifaxTransitApp/1.0")
+                        .build()
+
+                    val fuzzyRes = unsafeClient.newCall(fuzzyReq).execute()
+                    val fuzzyBody = fuzzyRes.body?.string() ?: "[]"
+                    val fuzzyJson = Json.parseToJsonElement(fuzzyBody).jsonArray
+
+                    results = fuzzyJson.mapNotNull { item ->
                         val obj = item.jsonObject
                         val name = obj["display_name"]?.jsonPrimitive?.content ?: return@mapNotNull null
                         val lat = obj["lat"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
                         val lon = obj["lon"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
                         SearchResult(name, lat, lon)
                     }
-
-                    onResult(results)
                 }
+
+                // Sort results by relevance
+                val sorted = results.sortedWith(
+                    compareBy<SearchResult> {
+                        when {
+                            it.name.equals(query, true) -> 0
+                            it.name.startsWith(query, true) -> 1
+                            it.name.contains(query, true) -> 2
+                            else -> 3
+                        }
+                    }
+                )
+
+                isSearching.value = false
+                onResult(sorted)
 
             } catch (e: Exception) {
                 Log.e("SEARCH", "Search error: $e")
+                isSearching.value = false
                 onResult(emptyList())
             }
         }
     }
 
+    // -----------------------------
+    // Frame timer
+    // -----------------------------
     init {
         viewModelScope.launch {
             while (true) {
@@ -129,6 +186,9 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    // -----------------------------
+    // GTFS Updates
+    // -----------------------------
     fun startGtfsUpdates() {
         viewModelScope.launch {
             while (true) {
@@ -179,9 +239,18 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    // -----------------------------
+    // Route Toggles
+    // -----------------------------
     fun toggleHighlight(routeId: String, highlight: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.setHighlight(routeId, highlight)
+        }
+    }
+
+    fun toggleFavourite(routeId: String, fav: Boolean) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.setFavourite(routeId, fav)
         }
     }
 }

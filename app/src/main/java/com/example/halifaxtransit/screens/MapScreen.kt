@@ -3,10 +3,12 @@ package com.example.halifaxtransit.screens
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
@@ -26,6 +28,7 @@ fun BusMapScreen(viewModel: MainViewModel) {
     val buses by viewModel.buses.collectAsState()
     val routes by viewModel.routes.collectAsState()
     val frameTime by viewModel.frameTime.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
 
     // Search state
     var query by remember { mutableStateOf("") }
@@ -47,8 +50,8 @@ fun BusMapScreen(viewModel: MainViewModel) {
             value = query,
             onValueChange = {
                 query = it
-                if (query.length >= 3) {
-                    viewModel.searchPlaces(query) { list ->
+                if (query.length >= 2) {
+                    viewModel.searchPlacesDebounced(query) { list ->
                         results = list
                     }
                 } else {
@@ -62,6 +65,28 @@ fun BusMapScreen(viewModel: MainViewModel) {
         )
 
         // -----------------------------
+        // LOADING INDICATOR
+        // -----------------------------
+        if (isSearching && query.length >= 2) {
+            Text(
+                "Searching…",
+                modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+                color = Color.Gray
+            )
+        }
+
+        // -----------------------------
+        // NO RESULTS MESSAGE
+        // -----------------------------
+        if (!isSearching && results.isEmpty() && query.length >= 2) {
+            Text(
+                "No results found",
+                modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
+                color = Color.Gray
+            )
+        }
+
+        // -----------------------------
         // SEARCH RESULTS LIST
         // -----------------------------
         results.forEach { result ->
@@ -71,12 +96,11 @@ fun BusMapScreen(viewModel: MainViewModel) {
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 6.dp)
                     .clickable {
-                        // Move map to selected location
                         mapState.setCameraOptions {
                             center(Point.fromLngLat(result.lon, result.lat))
                             zoom(14.0)
                         }
-                        results = emptyList() // hide results
+                        results = emptyList()
                     }
             )
         }
@@ -84,44 +108,60 @@ fun BusMapScreen(viewModel: MainViewModel) {
         // -----------------------------
         // MAP + BUS MARKERS
         // -----------------------------
-        MapboxMap(mapViewportState = mapState) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clickable { results = emptyList() }
+        ) {
+            MapboxMap(mapViewportState = mapState) {
 
-            buses.values.forEach { bus ->
+                buses.values.forEach { bus ->
 
-                val duration = (frameTime - bus.lastUpdateTime).coerceAtLeast(1L)
-                val t = (duration / 2000f).coerceIn(0f, 1f)
+                    val duration = (frameTime - bus.lastUpdateTime).coerceAtLeast(1L)
+                    val t = (duration / 2000f).coerceIn(0f, 1f)
 
-                val lat = bus.fromLat + (bus.toLat - bus.fromLat) * t
-                val lon = bus.fromLon + (bus.toLon - bus.fromLon) * t
+                    val lat = bus.fromLat + (bus.toLat - bus.fromLat) * t
+                    val lon = bus.fromLon + (bus.toLon - bus.fromLon) * t
 
-                val route = routes.find { bus.routeId.startsWith(it.routeId) }
+                    // -----------------------------
+                    // FIXED ROUTE MATCHING
+                    // -----------------------------
+                    // Normalize GTFS route IDs like "1-1", "1A", etc.
+                    val normalizedBusRoute = bus.routeId
+                        .replace("-", "")
+                        .replace("A", "")
+                        .replace("B", "")
+                        .trim()
 
-                val icon = if (route?.highlights == true)
-                    R.drawable.busblue
-                else
-                    R.drawable.bus
+                    val route = routes.find { normalizedBusRoute == it.routeId }
 
-                ViewAnnotation(
-                    options = viewAnnotationOptions {
-                        geometry(Point.fromLngLat(lon, lat))
-                    }
-                ) {
-                    Column(
-                        modifier = Modifier.width(40.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
+                    val icon = if (route?.highlights == true)
+                        R.drawable.busblue
+                    else
+                        R.drawable.bus
+
+                    ViewAnnotation(
+                        options = viewAnnotationOptions {
+                            geometry(Point.fromLngLat(lon, lat))
+                        }
                     ) {
+                        Column(
+                            modifier = Modifier.width(40.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
 
-                        Image(
-                            painter = painterResource(icon),
-                            contentDescription = null,
-                            modifier = Modifier.size(26.dp)
-                        )
+                            Image(
+                                painter = painterResource(icon),
+                                contentDescription = null,
+                                modifier = Modifier.size(26.dp)
+                            )
 
-                        Text(
-                            bus.routeId,
-                            fontSize = 10.sp,
-                            color = Color.Black
-                        )
+                            Text(
+                                bus.routeId,
+                                fontSize = 10.sp,
+                                color = Color.Black
+                            )
+                        }
                     }
                 }
             }
