@@ -3,7 +3,6 @@ package com.example.halifaxtransit.screens
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -87,22 +86,46 @@ fun BusMapScreen(viewModel: MainViewModel) {
         }
 
         // -----------------------------
-        // SEARCH RESULTS LIST
+        // SEARCH RESULTS LIST + ⭐ SAVE BUTTON
         // -----------------------------
         results.forEach { result ->
-            Text(
-                text = result.name,
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .clickable {
-                        mapState.setCameraOptions {
-                            center(Point.fromLngLat(result.lon, result.lat))
-                            zoom(14.0)
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+
+                // Tap to move map
+                Text(
+                    text = result.name,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            mapState.setCameraOptions {
+                                center(Point.fromLngLat(result.lon, result.lat))
+                                zoom(14.0)
+                            }
+                            results = emptyList()
                         }
-                        results = emptyList()
-                    }
-            )
+                )
+
+                // ⭐ Save favourite location
+                Text(
+                    text = "⭐",
+                    fontSize = 22.sp,
+                    modifier = Modifier
+                        .padding(start = 12.dp)
+                        .clickable {
+                            viewModel.addFavouriteLocation(
+                                name = result.name,
+                                lat = result.lat,
+                                lon = result.lon
+                            )
+                        }
+                )
+            }
         }
 
         // -----------------------------
@@ -111,7 +134,7 @@ fun BusMapScreen(viewModel: MainViewModel) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { results = emptyList() }
+                .clickable { results = emptyList() } // tap map to hide results
         ) {
             MapboxMap(mapViewportState = mapState) {
 
@@ -126,7 +149,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
                     // -----------------------------
                     // FIXED ROUTE MATCHING
                     // -----------------------------
-                    // Normalize GTFS route IDs like "1-1", "1A", etc.
                     val normalizedBusRoute = bus.routeId
                         .replace("-", "")
                         .replace("A", "")

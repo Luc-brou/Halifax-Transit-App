@@ -70,7 +70,8 @@ class MainActivity : ComponentActivity() {
 
                     composable("map") { BusMapScreen(viewModel) }
                     composable("routes") { RoutesScreen(viewModel) }
-                    composable("favourites") { FavouritesScreen() }
+                    composable("favourites") { FavouritesScreen(viewModel) }
+
                 }
             }
         }

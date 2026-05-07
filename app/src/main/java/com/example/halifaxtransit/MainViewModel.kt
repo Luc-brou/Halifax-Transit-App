@@ -6,8 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.halifaxtransit.database.AppDatabase
 import com.example.halifaxtransit.database.RoutesDao
+import com.example.halifaxtransit.database.FavouriteLocationDao
 import com.example.halifaxtransit.models.AnimatedBus
 import com.example.halifaxtransit.models.Route
+import com.example.halifaxtransit.models.FavouriteLocation
 import com.google.transit.realtime.GtfsRealtime
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -34,6 +36,7 @@ class MainViewModel : ViewModel() {
     val frameTime = _frameTime.asStateFlow()
 
     private lateinit var dao: RoutesDao
+    private lateinit var favouriteLocationDao: FavouriteLocationDao
 
     // -----------------------------
     // Search Result + Loading State
@@ -45,8 +48,13 @@ class MainViewModel : ViewModel() {
     )
 
     val isSearching = MutableStateFlow(false)
-
     private var searchJob: Job? = null
+
+    // -----------------------------
+    // Favourite Locations
+    // -----------------------------
+    private val _favouriteLocations = MutableStateFlow<List<FavouriteLocation>>(emptyList())
+    val favouriteLocations = _favouriteLocations.asStateFlow()
 
     // -----------------------------
     // Unsafe client for emulator
@@ -75,7 +83,7 @@ class MainViewModel : ViewModel() {
     fun searchPlacesDebounced(query: String, callback: (List<SearchResult>) -> Unit) {
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
-            delay(300) // debounce
+            delay(300)
             searchPlaces(query, callback)
         }
     }
@@ -88,7 +96,6 @@ class MainViewModel : ViewModel() {
             try {
                 isSearching.value = true
 
-                // Halifax bounding box
                 val baseUrl =
                     "https://nominatim.openstreetmap.org/search" +
                             "?q=${query.replace(" ", "+")}" +
@@ -116,7 +123,7 @@ class MainViewModel : ViewModel() {
                     SearchResult(name, lat, lon)
                 }
 
-                // If no results, try fuzzy search
+                // Fuzzy fallback
                 if (results.isEmpty()) {
                     val fuzzyUrl =
                         "https://nominatim.openstreetmap.org/search" +
@@ -141,7 +148,6 @@ class MainViewModel : ViewModel() {
                     }
                 }
 
-                // Sort results by relevance
                 val sorted = results.sortedWith(
                     compareBy<SearchResult> {
                         when {
@@ -176,12 +182,23 @@ class MainViewModel : ViewModel() {
         }
     }
 
+    // -----------------------------
+    // Database Init
+    // -----------------------------
     fun initDb(context: Context) {
-        dao = AppDatabase.getDatabase(context).routesDao()
+        val db = AppDatabase.getDatabase(context)
+        dao = db.routesDao()
+        favouriteLocationDao = db.favouriteLocationDao()
 
         viewModelScope.launch {
             dao.getAll().collect {
                 _routes.value = it
+            }
+        }
+
+        viewModelScope.launch {
+            favouriteLocationDao.getAll().collect {
+                _favouriteLocations.value = it
             }
         }
     }
@@ -251,6 +268,27 @@ class MainViewModel : ViewModel() {
     fun toggleFavourite(routeId: String, fav: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.setFavourite(routeId, fav)
+        }
+    }
+
+    // -----------------------------
+    // Favourite Location Functions
+    // -----------------------------
+    fun addFavouriteLocation(name: String, lat: Double, lon: Double) {
+        viewModelScope.launch(Dispatchers.IO) {
+            favouriteLocationDao.insert(
+                FavouriteLocation(
+                    name = name,
+                    lat = lat,
+                    lon = lon
+                )
+            )
+        }
+    }
+
+    fun removeFavouriteLocation(location: FavouriteLocation) {
+        viewModelScope.launch(Dispatchers.IO) {
+            favouriteLocationDao.delete(location)
         }
     }
 }
