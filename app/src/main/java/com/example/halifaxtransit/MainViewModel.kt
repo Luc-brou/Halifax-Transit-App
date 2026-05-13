@@ -4,22 +4,19 @@ import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.halifaxtransit.database.AppDatabase
-import com.example.halifaxtransit.database.RoutesDao
-import com.example.halifaxtransit.database.FavouriteLocationDao
-import com.example.halifaxtransit.models.AnimatedBus
-import com.example.halifaxtransit.models.Route
-import com.example.halifaxtransit.models.FavouriteLocation
+import com.example.halifaxtransit.database.*
+import com.example.halifaxtransit.models.*
 import com.google.transit.realtime.GtfsRealtime
 import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.security.SecureRandom
 import java.security.cert.X509Certificate
 import javax.net.ssl.*
+import com.opencsv.CSVReader
+import java.io.InputStreamReader
 
 class MainViewModel : ViewModel() {
 
@@ -37,6 +34,7 @@ class MainViewModel : ViewModel() {
 
     private lateinit var dao: RoutesDao
     private lateinit var favouriteLocationDao: FavouriteLocationDao
+    private lateinit var busStopDao: BusStopDao
 
     // -----------------------------
     // Search Result + Loading State
@@ -55,6 +53,12 @@ class MainViewModel : ViewModel() {
     // -----------------------------
     private val _favouriteLocations = MutableStateFlow<List<FavouriteLocation>>(emptyList())
     val favouriteLocations = _favouriteLocations.asStateFlow()
+
+    // -----------------------------
+    // Bus Stops
+    // -----------------------------
+    private val _busStops = MutableStateFlow<List<BusStop>>(emptyList())
+    val busStops = _busStops.asStateFlow()
 
     // -----------------------------
     // Unsafe client for emulator
@@ -189,17 +193,64 @@ class MainViewModel : ViewModel() {
         val db = AppDatabase.getDatabase(context)
         dao = db.routesDao()
         favouriteLocationDao = db.favouriteLocationDao()
+        busStopDao = db.busStopDao()
 
+        // Routes
         viewModelScope.launch {
-            dao.getAll().collect {
-                _routes.value = it
-            }
+            dao.getAll().collect { _routes.value = it }
         }
 
+        // Favourite locations
         viewModelScope.launch {
-            favouriteLocationDao.getAll().collect {
-                _favouriteLocations.value = it
+            favouriteLocationDao.getAll().collect { _favouriteLocations.value = it }
+        }
+
+        // Bus stops
+        viewModelScope.launch(Dispatchers.IO) {
+            val existing = busStopDao.getAll().firstOrNull()
+            if (existing.isNullOrEmpty()) {
+                val loaded = loadBusStopsFromCsv(context)
+                busStopDao.insertAll(loaded)
             }
+
+            busStopDao.getAll().collect {
+                _busStops.value = it
+            }
+        }
+    }
+
+    // -----------------------------
+    // CSV Loader (Web Mercator → Lat/Lon)
+    // -----------------------------
+    private fun loadBusStopsFromCsv(context: Context): List<BusStop> {
+        val input = context.assets.open("BusStops.csv")
+        val reader = CSVReader(InputStreamReader(input))
+
+        val rows = reader.readAll()
+
+        return rows.drop(1).mapNotNull { parts ->
+
+            if (parts.size < 27) return@mapNotNull null
+
+            val stopId = parts[1].trim()
+            val stopName = parts[4].trim()
+
+            val xStr = parts[25].trim()
+            val yStr = parts[26].trim()
+
+            val x = xStr.toDoubleOrNull() ?: return@mapNotNull null
+            val y = yStr.toDoubleOrNull() ?: return@mapNotNull null
+
+            val lon = x / 20037508.34 * 180
+            var lat = y / 20037508.34 * 180
+            lat = 180 / Math.PI * (2 * Math.atan(Math.exp(lat * Math.PI / 180)) - Math.PI / 2)
+
+            BusStop(
+                stop_id = stopId,
+                stop_name = stopName,
+                stop_lat = lat,
+                stop_lon = lon
+            )
         }
     }
 

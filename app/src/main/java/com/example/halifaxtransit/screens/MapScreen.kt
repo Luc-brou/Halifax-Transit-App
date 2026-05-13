@@ -28,8 +28,8 @@ fun BusMapScreen(viewModel: MainViewModel) {
     val routes by viewModel.routes.collectAsState()
     val frameTime by viewModel.frameTime.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
+    val stops by viewModel.busStops.collectAsState()
 
-    // Search state
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<MainViewModel.SearchResult>>(emptyList()) }
 
@@ -42,9 +42,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
 
     Column {
 
-        // -----------------------------
-        // SEARCH BAR
-        // -----------------------------
         OutlinedTextField(
             value = query,
             onValueChange = {
@@ -63,9 +60,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
                 .padding(8.dp)
         )
 
-        // -----------------------------
-        // LOADING INDICATOR
-        // -----------------------------
         if (isSearching && query.length >= 2) {
             Text(
                 "Searching…",
@@ -74,9 +68,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
             )
         }
 
-        // -----------------------------
-        // NO RESULTS MESSAGE
-        // -----------------------------
         if (!isSearching && results.isEmpty() && query.length >= 2) {
             Text(
                 "No results found",
@@ -85,9 +76,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
             )
         }
 
-        // -----------------------------
-        // SEARCH RESULTS LIST + ⭐ SAVE BUTTON
-        // -----------------------------
         results.forEach { result ->
             Row(
                 modifier = Modifier
@@ -97,7 +85,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
                 verticalAlignment = Alignment.CenterVertically
             ) {
 
-                // Tap to move map
                 Text(
                     text = result.name,
                     modifier = Modifier
@@ -111,7 +98,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
                         }
                 )
 
-                // ⭐ Save favourite location
                 Text(
                     text = "⭐",
                     fontSize = 22.sp,
@@ -128,16 +114,33 @@ fun BusMapScreen(viewModel: MainViewModel) {
             }
         }
 
-        // -----------------------------
-        // MAP + BUS MARKERS
-        // -----------------------------
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable { results = emptyList() } // tap map to hide results
+                .clickable { results = emptyList() }
         ) {
             MapboxMap(mapViewportState = mapState) {
 
+                // -----------------------------
+                // BUS STOP ICONS
+                // -----------------------------
+                stops.forEach { stop ->
+                    ViewAnnotation(
+                        options = viewAnnotationOptions {
+                            geometry(Point.fromLngLat(stop.stop_lon, stop.stop_lat))
+                        }
+                    ) {
+                        Image(
+                            painter = painterResource(R.drawable.busstopicon),
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+
+                // -----------------------------
+                // BUS MARKERS
+                // -----------------------------
                 buses.values.forEach { bus ->
 
                     val duration = (frameTime - bus.lastUpdateTime).coerceAtLeast(1L)
@@ -146,9 +149,6 @@ fun BusMapScreen(viewModel: MainViewModel) {
                     val lat = bus.fromLat + (bus.toLat - bus.fromLat) * t
                     val lon = bus.fromLon + (bus.toLon - bus.fromLon) * t
 
-                    // -----------------------------
-                    // FIXED ROUTE MATCHING
-                    // -----------------------------
                     val normalizedBusRoute = bus.routeId
                         .replace("-", "")
                         .replace("A", "")

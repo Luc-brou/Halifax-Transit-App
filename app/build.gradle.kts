@@ -77,12 +77,15 @@ dependencies {
     implementation("androidx.room:room-runtime:2.8.4")
     ksp("androidx.room:room-compiler:2.8.4")
 
-    //HTTP reject fix
+    // HTTP reject fix
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.protobuf:protobuf-java:3.25.1")
     //
 
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+
+    // Halifax bus stop data loading fix
+    implementation("com.opencsv:opencsv:5.7.1")
 
 
 }
