@@ -9,6 +9,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -24,11 +25,16 @@ import com.mapbox.maps.viewannotation.viewAnnotationOptions
 @Composable
 fun BusMapScreen(viewModel: MainViewModel) {
 
+    val context = LocalContext.current
+
     val buses by viewModel.buses.collectAsState()
     val routes by viewModel.routes.collectAsState()
     val frameTime by viewModel.frameTime.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val stops by viewModel.busStops.collectAsState()
+
+    val showBuses by viewModel.showBuses.collectAsState()
+    val showBusStops by viewModel.showBusStops.collectAsState()
 
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<MainViewModel.SearchResult>>(emptyList()) }
@@ -42,6 +48,7 @@ fun BusMapScreen(viewModel: MainViewModel) {
 
     Column {
 
+        // SEARCH BAR
         OutlinedTextField(
             value = query,
             onValueChange = {
@@ -61,21 +68,14 @@ fun BusMapScreen(viewModel: MainViewModel) {
         )
 
         if (isSearching && query.length >= 2) {
-            Text(
-                "Searching…",
-                modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
-                color = Color.Gray
-            )
+            Text("Searching…", modifier = Modifier.padding(12.dp), color = Color.Gray)
         }
 
         if (!isSearching && results.isEmpty() && query.length >= 2) {
-            Text(
-                "No results found",
-                modifier = Modifier.padding(start = 12.dp, bottom = 6.dp),
-                color = Color.Gray
-            )
+            Text("No results found", modifier = Modifier.padding(12.dp), color = Color.Gray)
         }
 
+        // SEARCH RESULTS
         results.forEach { result ->
             Row(
                 modifier = Modifier
@@ -114,78 +114,115 @@ fun BusMapScreen(viewModel: MainViewModel) {
             }
         }
 
+        // MAP + BUS STOPS + BUS MARKERS
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .clickable { results = emptyList() }
         ) {
+
             MapboxMap(mapViewportState = mapState) {
 
-                // -----------------------------
-                // BUS STOP ICONS
-                // -----------------------------
-                stops.forEach { stop ->
-                    ViewAnnotation(
-                        options = viewAnnotationOptions {
-                            geometry(Point.fromLngLat(stop.stop_lon, stop.stop_lat))
-                        }
-                    ) {
-                        Image(
-                            painter = painterResource(R.drawable.busstopicon),
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                }
-
-                // -----------------------------
-                // BUS MARKERS
-                // -----------------------------
-                buses.values.forEach { bus ->
-
-                    val duration = (frameTime - bus.lastUpdateTime).coerceAtLeast(1L)
-                    val t = (duration / 2000f).coerceIn(0f, 1f)
-
-                    val lat = bus.fromLat + (bus.toLat - bus.fromLat) * t
-                    val lon = bus.fromLon + (bus.toLon - bus.fromLon) * t
-
-                    val normalizedBusRoute = bus.routeId
-                        .replace("-", "")
-                        .replace("A", "")
-                        .replace("B", "")
-                        .trim()
-
-                    val route = routes.find { normalizedBusRoute == it.routeId }
-
-                    val icon = if (route?.highlights == true)
-                        R.drawable.busblue
-                    else
-                        R.drawable.bus
-
-                    ViewAnnotation(
-                        options = viewAnnotationOptions {
-                            geometry(Point.fromLngLat(lon, lat))
-                        }
-                    ) {
-                        Column(
-                            modifier = Modifier.width(40.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally
+                // BUS STOP ICONS (ViewAnnotations, toggleable)
+                if (showBusStops) {
+                    stops.forEach { stop ->
+                        ViewAnnotation(
+                            options = viewAnnotationOptions {
+                                geometry(Point.fromLngLat(stop.stop_lon, stop.stop_lat))
+                            }
                         ) {
-
                             Image(
-                                painter = painterResource(icon),
+                                painter = painterResource(R.drawable.busstopicon),
                                 contentDescription = null,
-                                modifier = Modifier.size(26.dp)
-                            )
-
-                            Text(
-                                bus.routeId,
-                                fontSize = 10.sp,
-                                color = Color.Black
+                                modifier = Modifier.size(18.dp)
                             )
                         }
                     }
                 }
+
+                // BUS MARKERS (ViewAnnotations)
+                if (showBuses) {
+                    buses.values.forEach { bus ->
+
+                        val duration = (frameTime - bus.lastUpdateTime).coerceAtLeast(1L)
+                        val t = (duration / 2000f).coerceIn(0f, 1f)
+
+                        val lat = bus.fromLat + (bus.toLat - bus.fromLat) * t
+                        val lon = bus.fromLon + (bus.toLon - bus.fromLon) * t
+
+                        val normalizedBusRoute = bus.routeId
+                            .replace("-", "")
+                            .replace("A", "")
+                            .replace("B", "")
+                            .trim()
+
+                        val route = routes.find { normalizedBusRoute == it.routeId }
+
+                        val icon = if (route?.highlights == true)
+                            R.drawable.busblue
+                        else
+                            R.drawable.bus
+
+                        ViewAnnotation(
+                            options = viewAnnotationOptions {
+                                geometry(Point.fromLngLat(lon, lat))
+                            }
+                        ) {
+                            Column(
+                                modifier = Modifier.width(40.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+
+                                Image(
+                                    painter = painterResource(icon),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(26.dp)
+                                )
+
+                                Text(
+                                    bus.routeId,
+                                    fontSize = 10.sp,
+                                    color = Color.Black
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // FLOATING TOGGLE BUTTONS
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp, top = 80.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+
+                // BUS TOGGLE
+                Image(
+                    painter = painterResource(
+                        if (showBuses) R.drawable.bus else R.drawable.bustoggleoff
+                    ),
+                    contentDescription = "Toggle buses",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable {
+                            viewModel.showBuses.value = !showBuses
+                        }
+                )
+
+                // BUS STOP TOGGLE
+                Image(
+                    painter = painterResource(
+                        if (showBusStops) R.drawable.busstopicon else R.drawable.busstoptoggleoff
+                    ),
+                    contentDescription = "Toggle bus stops",
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clickable {
+                            viewModel.showBusStops.value = !showBusStops
+                        }
+                )
             }
         }
     }

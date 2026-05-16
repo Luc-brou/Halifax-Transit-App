@@ -37,6 +37,12 @@ class MainViewModel : ViewModel() {
     private lateinit var busStopDao: BusStopDao
 
     // -----------------------------
+    // UI Toggles
+    // -----------------------------
+    val showBuses = MutableStateFlow(false)
+    val showBusStops = MutableStateFlow(false)
+
+    // -----------------------------
     // Search Result + Loading State
     // -----------------------------
     data class SearchResult(
@@ -93,7 +99,7 @@ class MainViewModel : ViewModel() {
     }
 
     // -----------------------------
-    // Improved Nominatim Search
+    // Halifax Transit–Only Search
     // -----------------------------
     fun searchPlaces(query: String, onResult: (List<SearchResult>) -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -106,7 +112,7 @@ class MainViewModel : ViewModel() {
                             "&format=json" +
                             "&addressdetails=1" +
                             "&countrycodes=ca" +
-                            "&viewbox=-63.9,44.9,-63.3,44.5" +
+                            "&viewbox=-63.95,44.90,-63.20,44.45" + // HRM service area
                             "&bounded=1" +
                             "&limit=10"
 
@@ -127,44 +133,31 @@ class MainViewModel : ViewModel() {
                     SearchResult(name, lat, lon)
                 }
 
-                // Fuzzy fallback
-                if (results.isEmpty()) {
-                    val fuzzyUrl =
-                        "https://nominatim.openstreetmap.org/search" +
-                                "?q=${query.replace(" ", "+")}*" +
-                                "&format=json&addressdetails=1&limit=10"
-
-                    val fuzzyReq = Request.Builder()
-                        .url(fuzzyUrl)
-                        .header("User-Agent", "HalifaxTransitApp/1.0")
-                        .build()
-
-                    val fuzzyRes = unsafeClient.newCall(fuzzyReq).execute()
-                    val fuzzyBody = fuzzyRes.body?.string() ?: "[]"
-                    val fuzzyJson = Json.parseToJsonElement(fuzzyBody).jsonArray
-
-                    results = fuzzyJson.mapNotNull { item ->
-                        val obj = item.jsonObject
-                        val name = obj["display_name"]?.jsonPrimitive?.content ?: return@mapNotNull null
-                        val lat = obj["lat"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
-                        val lon = obj["lon"]?.jsonPrimitive?.doubleOrNull ?: return@mapNotNull null
-                        SearchResult(name, lat, lon)
-                    }
-                }
-
-                val sorted = results.sortedWith(
-                    compareBy<SearchResult> {
-                        when {
-                            it.name.equals(query, true) -> 0
-                            it.name.startsWith(query, true) -> 1
-                            it.name.contains(query, true) -> 2
-                            else -> 3
-                        }
-                    }
+                // -----------------------------
+                // STRICT HRM COMMUNITY FILTER
+                // -----------------------------
+                val allowedAreas = listOf(
+                    "halifax", "dartmouth", "bedford", "sackville", "lower sackville",
+                    "middle sackville", "upper sackville", "spryfield", "clayton park",
+                    "timberlea", "cole harbour", "eastern passage", "beaver bank",
+                    "herring cove", "tantallon", "beechville", "armdale", "fairview",
+                    "north end", "south end", "west end"
                 )
 
+                results = results.filter { r ->
+                    val name = r.name.lowercase()
+                    allowedAreas.any { area -> name.contains(area) }
+                }
+
+                // -----------------------------
+                // GEO FENCE (backup)
+                // -----------------------------
+                results = results.filter {
+                    it.lat in 44.45..44.90 && it.lon in -63.95..-63.20
+                }
+
                 isSearching.value = false
-                onResult(sorted)
+                onResult(results)
 
             } catch (e: Exception) {
                 Log.e("SEARCH", "Search error: $e")
@@ -195,17 +188,14 @@ class MainViewModel : ViewModel() {
         favouriteLocationDao = db.favouriteLocationDao()
         busStopDao = db.busStopDao()
 
-        // Routes
         viewModelScope.launch {
             dao.getAll().collect { _routes.value = it }
         }
 
-        // Favourite locations
         viewModelScope.launch {
             favouriteLocationDao.getAll().collect { _favouriteLocations.value = it }
         }
 
-        // Bus stops
         viewModelScope.launch(Dispatchers.IO) {
             val existing = busStopDao.getAll().firstOrNull()
             if (existing.isNullOrEmpty()) {
@@ -220,7 +210,7 @@ class MainViewModel : ViewModel() {
     }
 
     // -----------------------------
-    // CSV Loader (Web Mercator → Lat/Lon)
+    // CSV Loader
     // -----------------------------
     private fun loadBusStopsFromCsv(context: Context): List<BusStop> {
         val input = context.assets.open("BusStops.csv")
